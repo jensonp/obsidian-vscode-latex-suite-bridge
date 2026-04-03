@@ -1,7 +1,14 @@
+const fs = require("fs");
+const path = require("path");
 const vscode = require("vscode");
 const core = require("./core");
+const { createDebouncedAsyncTask, sleep } = require("./lib/debounce");
 
 let applyingEdit = false;
+let dataFileWatcher = null;
+let watchedDirectoryPath = "";
+let watchedFileName = "";
+
 let runtime = {
   snippets: [],
   settings: { ...core.DEFAULT_SETTINGS },
@@ -19,6 +26,96 @@ function config() {
 
 function isEnabled() {
   return config().get("enabled", true);
+}
+
+function resolveCanonicalPath(filePath) {
+  if (!filePath || !String(filePath).trim()) {
+    return "";
+  }
+  const resolved = path.resolve(filePath);
+  try {
+    return fs.realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+async function reloadSnippetsWithRetry(maxAttempts = 4, baseDelayMs = 120) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    await reloadSnippets({ notify: false });
+    if (!runtime.loadError) {
+      return;
+    }
+    if (attempt < maxAttempts) {
+      await sleep(baseDelayMs * attempt);
+    }
+  }
+  if (runtime.loadError) {
+    vscode.window.setStatusBarMessage(
+      `Obsidian LaTeX Suite: auto-reload failed (${runtime.loadError.message})`,
+      4000,
+    );
+  }
+}
+
+const debouncedExternalReload = createDebouncedAsyncTask(
+  () => reloadSnippetsWithRetry(4, 120),
+  250,
+);
+
+function closeDataFileWatcher() {
+  if (dataFileWatcher) {
+    dataFileWatcher.close();
+    dataFileWatcher = null;
+  }
+  watchedDirectoryPath = "";
+  watchedFileName = "";
+}
+
+function watchDataFile(dataPath) {
+  const canonicalPath = resolveCanonicalPath(dataPath);
+  if (!canonicalPath) {
+    closeDataFileWatcher();
+    return;
+  }
+
+  const directoryPath = path.dirname(canonicalPath);
+  const fileName = path.basename(canonicalPath);
+
+  if (dataFileWatcher && watchedDirectoryPath === directoryPath && watchedFileName === fileName) {
+    return;
+  }
+
+  closeDataFileWatcher();
+
+  try {
+    dataFileWatcher = fs.watch(directoryPath, { persistent: false }, (eventType, changedName) => {
+      if (eventType !== "change" && eventType !== "rename") {
+        return;
+      }
+
+      const changed = typeof changedName === "string"
+        ? changedName
+        : (Buffer.isBuffer(changedName) ? changedName.toString("utf8") : "");
+
+      if (changed && changed !== fileName) {
+        return;
+      }
+
+      debouncedExternalReload.trigger();
+    });
+
+    dataFileWatcher.on("error", () => {
+      closeDataFileWatcher();
+      // Re-establish on transient fs watcher failures.
+      watchDataFile(dataPath);
+    });
+
+    watchedDirectoryPath = directoryPath;
+    watchedFileName = fileName;
+  } catch {
+    closeDataFileWatcher();
+  }
 }
 
 function isTexDocument(document) {
@@ -219,6 +316,8 @@ async function onDidChangeTextDocument(event) {
 
 async function reloadSnippets({ notify = false } = {}) {
   const dataPath = config().get("obsidianDataJsonPath", "");
+  watchDataFile(dataPath);
+
   runtime = {
     snippets: [],
     settings: { ...core.DEFAULT_SETTINGS },
@@ -357,10 +456,19 @@ function activate(context) {
         void reloadSnippets({ notify: true });
       }
     }),
+    {
+      dispose() {
+        closeDataFileWatcher();
+        debouncedExternalReload.dispose();
+      },
+    },
   );
 }
 
-function deactivate() {}
+function deactivate() {
+  closeDataFileWatcher();
+  debouncedExternalReload.dispose();
+}
 
 module.exports = {
   activate,

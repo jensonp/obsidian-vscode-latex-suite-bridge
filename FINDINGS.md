@@ -103,3 +103,4 @@ Behavior changes added with this refactor:
 
 - automatic `w` snippets now support the delimiter-typed path (`dm` then space)
 - automatic matching uses a prefilter hint (string-tail and regex presence) to skip unnecessary scans on many keypresses
+- external Obsidian `data.json` edits are watched and auto-reloaded with debounce + retry

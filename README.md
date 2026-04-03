@@ -21,6 +21,7 @@ The extension is working and tested. It now has:
 - Supports mode flags (`m`, `n`, `M`, `t`, `c`), auto snippets (`A`), and word-boundary snippets (`w`)
 - Supports slash-triggered auto-fraction
 - Supports tabout in math context
+- Auto-reloads snippets when external edits change the configured `data.json`
 
 ## Install locally
 
