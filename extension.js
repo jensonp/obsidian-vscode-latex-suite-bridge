@@ -1,0 +1,311 @@
+const vscode = require("vscode");
+const core = require("./core");
+
+let applyingEdit = false;
+let runtime = {
+  snippets: [],
+  settings: { ...core.DEFAULT_SETTINGS },
+  dataPath: "",
+  loadError: null,
+};
+
+function config() {
+  return vscode.workspace.getConfiguration("obsidianLatexSuite");
+}
+
+function isEnabled() {
+  return config().get("enabled", true);
+}
+
+function isTexDocument(document) {
+  if (!document) {
+    return false;
+  }
+  if (document.languageId !== "latex" && document.languageId !== "tex") {
+    return false;
+  }
+  const fsPath = document.uri?.fsPath ?? "";
+  return fsPath.toLowerCase().endsWith(".tex");
+}
+
+function isTexEditor(editor) {
+  return Boolean(editor && isTexDocument(editor.document));
+}
+
+function activeTexEditor() {
+  const editor = vscode.window.activeTextEditor;
+  return isTexEditor(editor) ? editor : null;
+}
+
+function currentDocumentState(document, position) {
+  const text = document.getText();
+  const offset = document.offsetAt(position);
+  const context = core.getContext(text, offset);
+  return { text, offset, context };
+}
+
+function rangeFromOffsets(document, start, end) {
+  return new vscode.Range(document.positionAt(start), document.positionAt(end));
+}
+
+function currentSelectionText(editor) {
+  if (!editor || editor.selections.length !== 1) {
+    return "";
+  }
+  const selection = editor.selection;
+  if (selection.isEmpty) {
+    return "";
+  }
+  return editor.document.getText(selection);
+}
+
+async function insertSnippet(editor, range, replacement) {
+  applyingEdit = true;
+  try {
+    await editor.insertSnippet(new vscode.SnippetString(replacement), range);
+  } finally {
+    applyingEdit = false;
+  }
+}
+
+function findSnippetAtEditor(editor, position, { automaticOnly = false } = {}) {
+  const document = editor.document;
+  const state = currentDocumentState(document, position);
+  return core.findSnippetMatch(
+    state.text,
+    state.offset,
+    runtime.snippets,
+    runtime.settings,
+    state.context,
+    {
+      automaticOnly,
+      selectionText: currentSelectionText(editor),
+    },
+  );
+}
+
+async function applyMatch(editor, match) {
+  if (!match) {
+    return false;
+  }
+  const range = rangeFromOffsets(editor.document, match.start, match.end);
+  await insertSnippet(editor, range, match.replacement);
+  return true;
+}
+
+function configAllowsAutoSnippets() {
+  return config().get("autoExpandRegexSnippets", true);
+}
+
+function configAllowsAutofraction() {
+  return config().get("autofraction.enabled", true);
+}
+
+function configAllowsTabout() {
+  return config().get("tabout.enabled", true);
+}
+
+async function tryAutoFraction(editor, position) {
+  const document = editor.document;
+  const state = currentDocumentState(document, position);
+  const expansion = core.findAutoFractionSlashExpansion(
+    state.text,
+    state.offset,
+    runtime.settings,
+    state.context,
+  );
+  if (!expansion) {
+    return false;
+  }
+
+  const range = rangeFromOffsets(document, expansion.start, expansion.end);
+  await insertSnippet(editor, range, expansion.replacement);
+  return true;
+}
+
+async function onDidChangeTextDocument(event) {
+  if (applyingEdit || !isEnabled()) {
+    return;
+  }
+
+  const editor = activeTexEditor();
+  if (!editor || event.document !== editor.document) {
+    return;
+  }
+
+  if (runtime.loadError) {
+    return;
+  }
+
+  if (event.contentChanges.length !== 1) {
+    return;
+  }
+
+  const [change] = event.contentChanges;
+  if (change.text.length !== 1) {
+    return;
+  }
+
+  const position = event.document.positionAt(change.rangeOffset + change.text.length);
+
+  if (change.text === "/" && configAllowsAutofraction() && runtime.settings.autofractionEnabled) {
+    if (await tryAutoFraction(editor, position)) {
+      return;
+    }
+  }
+
+  if (!configAllowsAutoSnippets() || !runtime.settings.snippetsEnabled) {
+    return;
+  }
+
+  const match = findSnippetAtEditor(editor, position, { automaticOnly: true });
+  if (!match) {
+    return;
+  }
+  await applyMatch(editor, match);
+}
+
+async function reloadSnippets({ notify = false } = {}) {
+  const dataPath = config().get("obsidianDataJsonPath", "");
+  runtime = {
+    snippets: [],
+    settings: { ...core.DEFAULT_SETTINGS },
+    dataPath,
+    loadError: null,
+  };
+
+  if (!dataPath) {
+    runtime.loadError = new Error("obsidianLatexSuite.obsidianDataJsonPath is empty.");
+  } else {
+    try {
+      const loaded = core.loadPluginDataFromFile(dataPath);
+      runtime = {
+        snippets: loaded.snippets,
+        settings: loaded.settings,
+        dataPath,
+        loadError: null,
+      };
+    } catch (error) {
+      runtime.loadError = error;
+    }
+  }
+
+  if (notify) {
+    if (runtime.loadError) {
+      vscode.window.showWarningMessage(
+        `Obsidian LaTeX Suite: failed to load snippets from ${dataPath || "(unset path)"}: ${runtime.loadError.message}`,
+      );
+      return;
+    }
+    const message = `Obsidian LaTeX Suite: loaded ${runtime.snippets.length} snippets`;
+    vscode.window.setStatusBarMessage(message, 3000);
+    vscode.window.showInformationMessage(message);
+    return;
+  }
+
+  if (!runtime.loadError && runtime.snippets.length) {
+    vscode.window.setStatusBarMessage(
+      `Obsidian LaTeX Suite: loaded ${runtime.snippets.length} snippets`,
+      2000,
+    );
+  }
+}
+
+async function expandCommand() {
+  if (!isEnabled()) {
+    return;
+  }
+  const editor = activeTexEditor();
+  if (!editor) {
+    return;
+  }
+
+  const match = findSnippetAtEditor(editor, editor.selection.active, { automaticOnly: false });
+  await applyMatch(editor, match);
+}
+
+async function fallbackTab() {
+  try {
+    await vscode.commands.executeCommand("tab");
+    return;
+  } catch {
+    // Fall through.
+  }
+
+  try {
+    await vscode.commands.executeCommand("default:tab");
+    return;
+  } catch {
+    // Fall through.
+  }
+
+  try {
+    await vscode.commands.executeCommand("default:type", { text: "\t" });
+    return;
+  } catch {
+    // Fall through.
+  }
+
+  await vscode.commands.executeCommand("type", { text: "\t" });
+}
+
+async function tabCommand() {
+  const editor = activeTexEditor();
+  if (!editor || !isEnabled()) {
+    await fallbackTab();
+    return;
+  }
+
+  const originalPosition = editor.selection.active;
+  try {
+    await vscode.commands.executeCommand("jumpToNextSnippetPlaceholder");
+  } catch {
+    // Ignore and continue.
+  }
+  if (!editor.selection.active.isEqual(originalPosition)) {
+    return;
+  }
+
+  if (configAllowsTabout() && runtime.settings.taboutEnabled) {
+    const document = editor.document;
+    const state = currentDocumentState(document, originalPosition);
+    const targetOffset = core.findTaboutTarget(state.text, state.offset, state.context);
+    if (typeof targetOffset === "number" && targetOffset >= 0) {
+      const target = document.positionAt(targetOffset);
+      editor.selection = new vscode.Selection(target, target);
+      return;
+    }
+  }
+
+  if (runtime.settings.snippetsEnabled && runtime.settings.snippetsTrigger === "Tab") {
+    const match = findSnippetAtEditor(editor, editor.selection.active, { automaticOnly: false });
+    if (await applyMatch(editor, match)) {
+      return;
+    }
+  }
+
+  await fallbackTab();
+}
+
+function activate(context) {
+  void reloadSnippets();
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("obsidianLatexSuite.reload", () => reloadSnippets({ notify: true })),
+    vscode.commands.registerCommand("obsidianLatexSuite.expand", expandCommand),
+    vscode.commands.registerCommand("obsidianLatexSuite.tab", tabCommand),
+    vscode.workspace.onDidChangeTextDocument(onDidChangeTextDocument),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("obsidianLatexSuite")) {
+        void reloadSnippets({ notify: true });
+      }
+    }),
+  );
+}
+
+function deactivate() {}
+
+module.exports = {
+  activate,
+  deactivate,
+};

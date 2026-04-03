@@ -1,0 +1,85 @@
+{
+  "name": "obsidian-latex-suite-bridge",
+  "displayName": "Obsidian LaTeX Suite Bridge",
+  "description": "Bring Obsidian LaTeX Suite features (regex snippets, auto-fraction, tabout) to VS Code for .tex files.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:latex",
+    "onLanguage:tex"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "obsidianLatexSuite.reload",
+        "title": "Obsidian LaTeX Suite: Reload Snippets"
+      },
+      {
+        "command": "obsidianLatexSuite.expand",
+        "title": "Obsidian LaTeX Suite: Expand Regex Snippet"
+      },
+      {
+        "command": "obsidianLatexSuite.tab",
+        "title": "Obsidian LaTeX Suite: Tab (Tabout/Expand/Fallback)"
+      }
+    ],
+    "configuration": {
+      "title": "Obsidian LaTeX Suite",
+      "properties": {
+        "obsidianLatexSuite.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Obsidian LaTeX Suite features."
+        },
+        "obsidianLatexSuite.obsidianDataJsonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to Obsidian LaTeX Suite plugin `data.json`."
+        },
+        "obsidianLatexSuite.autoExpandRegexSnippets": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-expand Obsidian snippets with the 'A' option in .tex files."
+        },
+        "obsidianLatexSuite.overrideTab": {
+          "type": "boolean",
+          "default": false,
+          "description": "Override Tab in .tex files to run Obsidian tabout/regex expansion before falling back to the normal Tab behavior."
+        },
+        "obsidianLatexSuite.tabout.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable tabout (Tab jumps over closing delimiters like ')', '}', ']', '$'). Only used when overrideTab is enabled."
+        },
+        "obsidianLatexSuite.autofraction.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Obsidian-style auto-fraction when '/' is typed in math mode."
+        },
+        "obsidianLatexSuite.autofraction.breakingChars": {
+          "type": "string",
+          "default": "+-=\\t ",
+          "description": "Legacy compatibility setting. The Obsidian data.json value remains the runtime source of truth."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "key": "tab",
+        "command": "obsidianLatexSuite.tab",
+        "when": "editorTextFocus && !editorReadonly && (editorLangId == latex || editorLangId == tex) && resourceExtname == .tex && config.obsidianLatexSuite.overrideTab"
+      }
+    ]
+  }
+}
