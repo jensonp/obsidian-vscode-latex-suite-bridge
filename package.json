@@ -6,7 +6,9 @@
   "publisher": "local",
   "private": true,
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "test:ci": "node --test",
+    "package:vsix": "npx @vscode/vsce package --no-dependencies"
   },
   "engines": {
     "vscode": "^1.85.0"

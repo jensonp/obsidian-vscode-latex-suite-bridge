@@ -1,0 +1,13 @@
+{
+  "snippets": "[\n    {trigger: \"mk\", replacement: \"$${0}$\", options: \"tA\"},\n    {trigger: \"dm\", replacement: \"$$\\n$0\\n$$\", options: \"tAw\"},\n    {trigger: \"([a-zA-Z])hat\", replacement: \"\\\\hat{[[0]]}\", options: \"rmA\"},\n    {trigger: /iden(\\d)/, replacement: (match) => `I_${match[1]}`, options: \"mA\"},\n    {trigger: \"U\", replacement: \"\\\\underbrace{ ${VISUAL} }_{ $0 }\", options: \"mA\"}\n  ]",
+  "snippetVariables": "{\n    GREEK: \"alpha|beta\"\n  }",
+  "snippetsEnabled": true,
+  "snippetsTrigger": "Tab",
+  "removeSnippetWhitespace": true,
+  "autofractionEnabled": true,
+  "autofractionSymbol": "\\frac",
+  "autofractionBreakingChars": "+-=\t",
+  "taboutEnabled": true,
+  "wordDelimiters": "., +-\\n\t:;!?\\/{}[]()=~$",
+  "autofractionExcludedEnvs": "[[\"^{\",\"}\"],[\"\\\\pu{\",\"}\"]]"
+}

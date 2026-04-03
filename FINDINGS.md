@@ -86,3 +86,20 @@ The repo includes regression tests for:
 - slash-triggered auto-fraction
 - excluded auto-fraction environments
 - tabout targets
+
+## Core improvements delivered
+
+The runtime was split into focused modules to reduce coupling:
+
+- `lib/loader.js`
+- `lib/context.js`
+- `lib/snippets.js`
+- `lib/autofraction.js`
+- `lib/tabout.js`
+
+`core.js` now acts as a stable facade over these modules.
+
+Behavior changes added with this refactor:
+
+- automatic `w` snippets now support the delimiter-typed path (`dm` then space)
+- automatic matching uses a prefilter hint (string-tail and regex presence) to skip unnecessary scans on many keypresses

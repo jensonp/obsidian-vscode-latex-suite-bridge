@@ -7,6 +7,10 @@ let runtime = {
   settings: { ...core.DEFAULT_SETTINGS },
   dataPath: "",
   loadError: null,
+  matcherHint: {
+    hasAutoRegex: false,
+    autoStringTailChars: new Set(),
+  },
 };
 
 function config() {
@@ -35,6 +39,30 @@ function isTexEditor(editor) {
 function activeTexEditor() {
   const editor = vscode.window.activeTextEditor;
   return isTexEditor(editor) ? editor : null;
+}
+
+function buildMatcherHint(snippets) {
+  const autoStringTailChars = new Set();
+  let hasAutoRegex = false;
+
+  for (const snippet of snippets) {
+    if (!snippet.options?.automatic) {
+      continue;
+    }
+    if (snippet.type === "regex") {
+      hasAutoRegex = true;
+      continue;
+    }
+    const trigger = snippet.triggerText || "";
+    if (trigger.length > 0) {
+      autoStringTailChars.add(trigger[trigger.length - 1]);
+    }
+  }
+
+  return {
+    hasAutoRegex,
+    autoStringTailChars,
+  };
 }
 
 function currentDocumentState(document, position) {
@@ -105,6 +133,16 @@ function configAllowsTabout() {
   return config().get("tabout.enabled", true);
 }
 
+function shouldAttemptAutomaticMatch(insertedChar, wordDelimiters) {
+  if (runtime.matcherHint.hasAutoRegex) {
+    return true;
+  }
+  if (runtime.matcherHint.autoStringTailChars.has(insertedChar)) {
+    return true;
+  }
+  return core.isDelimiterCharacter(insertedChar, wordDelimiters);
+}
+
 async function tryAutoFraction(editor, position) {
   const document = editor.document;
   const state = currentDocumentState(document, position);
@@ -146,9 +184,10 @@ async function onDidChangeTextDocument(event) {
     return;
   }
 
+  const insertedChar = change.text;
   const position = event.document.positionAt(change.rangeOffset + change.text.length);
 
-  if (change.text === "/" && configAllowsAutofraction() && runtime.settings.autofractionEnabled) {
+  if (insertedChar === "/" && configAllowsAutofraction() && runtime.settings.autofractionEnabled) {
     if (await tryAutoFraction(editor, position)) {
       return;
     }
@@ -156,6 +195,19 @@ async function onDidChangeTextDocument(event) {
 
   if (!configAllowsAutoSnippets() || !runtime.settings.snippetsEnabled) {
     return;
+  }
+
+  if (!shouldAttemptAutomaticMatch(insertedChar, runtime.settings.wordDelimiters)) {
+    return;
+  }
+
+  if (core.isDelimiterCharacter(insertedChar, runtime.settings.wordDelimiters) && position.character > 0) {
+    const beforeBoundary = position.translate(0, -1);
+    const boundaryMatch = findSnippetAtEditor(editor, beforeBoundary, { automaticOnly: true });
+    if (boundaryMatch?.snippet?.options?.onWordBoundary) {
+      await applyMatch(editor, boundaryMatch);
+      return;
+    }
   }
 
   const match = findSnippetAtEditor(editor, position, { automaticOnly: true });
@@ -172,6 +224,10 @@ async function reloadSnippets({ notify = false } = {}) {
     settings: { ...core.DEFAULT_SETTINGS },
     dataPath,
     loadError: null,
+    matcherHint: {
+      hasAutoRegex: false,
+      autoStringTailChars: new Set(),
+    },
   };
 
   if (!dataPath) {
@@ -184,6 +240,7 @@ async function reloadSnippets({ notify = false } = {}) {
         settings: loaded.settings,
         dataPath,
         loadError: null,
+        matcherHint: buildMatcherHint(loaded.snippets),
       };
     } catch (error) {
       runtime.loadError = error;

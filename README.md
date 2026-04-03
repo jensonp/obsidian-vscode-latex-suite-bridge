@@ -2,54 +2,56 @@
 
 VS Code / Cursor extension that reuses Obsidian LaTeX Suite snippet data for `.tex` files.
 
-This project does **not** attempt to run Obsidian's bundled plugin host inside VS Code. It implements the snippet runtime natively against the VS Code extension API while preserving the parts of Obsidian LaTeX Suite that matter for editing behavior.
+## Current status
 
-## What it supports
+The extension is working and tested. It now has:
 
-- Obsidian `data.json` loading through `obsidianLatexSuite.obsidianDataJsonPath`
-- JavaScript-evaluated `snippets` and `snippetVariables`
-- string triggers, regex triggers, and `r`-option regex triggers
-- function-valued replacements
-- mode flags such as `m`, `n`, `M`, `t`
-- automatic snippets with `A`
-- word-boundary snippets with `w`
-- Obsidian-style slash-triggered auto-fraction
-- tabout over math delimiters and closing brackets
+- fixture-driven acceptance tests
+- modularized core runtime (`lib/*`)
+- improved word-boundary parity for typed delimiters
+- basic matcher prefilter to reduce unnecessary full scans
+- CI on GitHub Actions
 
-## What it does not do
+## Features
 
-- it does not run Obsidian's `main.js` directly
-- it does not depend on the Obsidian plugin lifecycle or vault APIs
-- it currently targets LaTeX editors only: `latex` / `tex` language ids and `.tex` files
+- Loads Obsidian `data.json` from `obsidianLatexSuite.obsidianDataJsonPath`
+- Evaluates JavaScript snippets and snippet variables
+- Supports string, regex, and function-valued replacements
+- Supports visual snippets using `${VISUAL}`
+- Supports mode flags (`m`, `n`, `M`, `t`, `c`), auto snippets (`A`), and word-boundary snippets (`w`)
+- Supports slash-triggered auto-fraction
+- Supports tabout in math context
 
 ## Install locally
 
-1. Clone the repo.
-2. Set `obsidianLatexSuite.obsidianDataJsonPath` to the absolute path of your Obsidian LaTeX Suite `data.json`.
-3. Copy or symlink the extension into your VS Code or Cursor extensions folder, or package it as a VSIX.
+1. Clone this repo.
+2. Set `obsidianLatexSuite.obsidianDataJsonPath` to your Obsidian LaTeX Suite `data.json`.
+3. Install locally as an unpacked extension or package to VSIX.
 4. Reload the editor window.
 
-## Behavior notes
+## Commands
 
-- `mk` and `dm` semantics come from your Obsidian snippet source, not from this bridge.
-- If your Obsidian `data.json` defines `dm` as display math, this bridge keeps that behavior.
-- If your Obsidian `data.json` defines `mk` as inline math, this bridge keeps that behavior.
+- `npm test`
+- `npm run test:ci`
+- `npm run package:vsix`
 
-## Tests
+## Architecture
 
-```bash
-npm test
-```
+- `extension.js`: VS Code integration and editor event wiring
+- `core.js`: stable facade for runtime functions
+- `lib/constants.js`: shared defaults and constants
+- `lib/loader.js`: snippet/settings parsing from Obsidian data
+- `lib/context.js`: math context and environment scanning
+- `lib/snippets.js`: snippet matching/replacement logic
+- `lib/autofraction.js`: slash-triggered fraction expansion
+- `lib/tabout.js`: tabout target resolution
 
-or:
+## Test coverage
 
-```bash
-node --test
-```
+- `test/core.test.js`: unit coverage for runtime internals
+- `test/acceptance.test.js`: fixture-based behavior checks
 
-## Files
+## Notes
 
-- `core.js`: snippet loading, mode detection, matching, auto-fraction, tabout
-- `extension.js`: VS Code integration layer
-- `test/core.test.js`: runtime regression tests
-- `FINDINGS.md`: implementation notes and parity decisions
+- This project reuses Obsidian snippet data but does not execute Obsidian's plugin host runtime.
+- `mk`/`dm` behavior is controlled by the loaded Obsidian snippets, not hardcoded by this bridge.
